@@ -1,0 +1,52 @@
+/* ==========================================================================
+   Table of Contents Generator — Front-end Styles
+   ========================================================================== */
+
+.tocg-toc {
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 1.25rem 1.5rem;
+    margin: 0 0 2rem;
+    display: inline-block;
+    min-width: 220px;
+    max-width: 100%;
+}
+
+.tocg-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.75rem;
+}
+
+.tocg-list,
+.tocg-sublist {
+    margin: 0;
+    padding-left: 1.25rem;
+    list-style: decimal;
+}
+
+.tocg-sublist {
+    list-style: lower-alpha;
+    margin-top: 0.25rem;
+}
+
+.tocg-list li,
+.tocg-sublist li {
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.tocg-toc a {
+    color: inherit;
+    text-decoration: none;
+    text-underline-offset: 2px;
+}
+
+.tocg-toc a:hover,
+.tocg-toc a:focus-visible {
+    text-decoration: underline;
+}
