@@ -22,7 +22,11 @@ foreach ( get_posts( array( 'post_type' => array( 'post', 'page' ), 'numberposts
 
 update_option( 'blogname', 'Table of Contents Generator' );
 update_option( 'blogdescription', 'Live demo' );
-update_option( 'permalink_structure', '/%postname%/' );
+// Pretty permalinks. Set them through WP_Rewrite, not update_option(): in
+// Playground the routing rules already exist by now, and only this updates
+// WordPress's in-memory copy so the flush rebuilds them correctly.
+$GLOBALS['wp_rewrite']->set_permalink_structure( '/%postname%/' );
+flush_rewrite_rules();
 
 /**
  * Upload one of the Fieldnote theme's images and return its attachment ID.
