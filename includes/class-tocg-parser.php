@@ -3,14 +3,20 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 
 /**
  * Parses headings out of HTML content using DOMDocument.
+ *
+ * Content is always parsed inside a wrapper element with a known id. Without
+ * it, LIBXML_HTML_NOIMPLIED leaves no <body> to read the result back from,
+ * and multiple top-level elements have no single parent.
  */
 class TOCG_Parser {
 
+    private const ROOT_ID = 'tocg-parse-root';
+
     /**
-     * Extract headings from HTML content.
+     * Extract headings from HTML content, in document order.
      *
-     * @param string   $html       Raw post HTML.
-     * @param string[] $tags       Heading tags to look for, e.g. ['h2', 'h3'].
+     * @param string   $html Raw post HTML.
+     * @param string[] $tags Heading tags to look for, e.g. ['h2', 'h3'].
      * @return array<int, array{tag: string, text: string, id: string}> Ordered list of headings.
      */
     public static function extract( string $html, array $tags ): array {
@@ -18,93 +24,74 @@ class TOCG_Parser {
             return [];
         }
 
-        $doc = new DOMDocument();
-        // Suppress errors from malformed HTML; UTF-8 wrapper prevents charset mangling.
-        libxml_use_internal_errors( true );
-        $doc->loadHTML( '<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-        libxml_clear_errors();
+        [ , $nodes ] = self::load( $html, $tags );
 
         $headings = [];
         $seen_ids = [];
 
-        foreach ( $tags as $tag ) {
-            $nodes = $doc->getElementsByTagName( $tag );
-            // iterator_to_array so we don't mutate a live NodeList while reading.
-            foreach ( iterator_to_array( $nodes ) as $node ) {
-                $text = trim( $node->textContent );
-                if ( empty( $text ) ) {
-                    continue;
-                }
-
-                // Reuse existing id attribute if present; otherwise generate a slug.
-                $id = $node->getAttribute( 'id' );
-                if ( empty( $id ) ) {
-                    $id = self::slug( $text, $seen_ids );
-                }
-                $seen_ids[] = $id;
-
-                // Record DOM position so we can sort below.
-                $headings[] = [
-                    'tag'      => $tag,
-                    'text'     => $text,
-                    'id'       => $id,
-                    '_pos'     => self::node_position( $node ),
-                ];
+        foreach ( $nodes as $node ) {
+            $text = trim( $node->textContent );
+            if ( '' === $text ) {
+                continue;
             }
+
+            // Reuse an existing id attribute if present; otherwise generate a unique slug.
+            $id = $node->getAttribute( 'id' );
+            if ( '' === $id ) {
+                $id = self::slug( $text, $seen_ids );
+            }
+            $seen_ids[] = $id;
+
+            $headings[] = [
+                'tag'  => strtolower( $node->nodeName ),
+                'text' => $text,
+                'id'   => $id,
+            ];
         }
 
-        // Sort by document order.
-        usort( $headings, fn( $a, $b ) => $a['_pos'] <=> $b['_pos'] );
-
-        // Drop the internal sort key.
-        return array_map( fn( $h ) => [
-            'tag'  => $h['tag'],
-            'text' => $h['text'],
-            'id'   => $h['id'],
-        ], $headings );
+        return $headings;
     }
 
     /**
      * Add id attributes to headings in the HTML so anchor links work.
      *
-     * @param string                                                     $html
-     * @param array<int, array{tag: string, text: string, id: string}>   $headings
+     * Headings are matched to $headings by position (both lists come from the
+     * same document-order query), so repeated heading text still gets the
+     * correct, unique id.
+     *
+     * @param string                                                   $html
+     * @param array<int, array{tag: string, text: string, id: string}> $headings
      * @return string Modified HTML.
      */
     public static function inject_ids( string $html, array $headings ): string {
-        // Build a lookup: text → id (first occurrence wins).
-        $map = [];
-        foreach ( $headings as $h ) {
-            $key = $h['tag'] . '|' . $h['text'];
-            if ( ! isset( $map[ $key ] ) ) {
-                $map[ $key ] = $h['id'];
-            }
+        if ( empty( $headings ) ) {
+            return $html;
         }
 
-        // Use DOMDocument to set id attributes without regex on HTML.
-        $doc = new DOMDocument();
-        libxml_use_internal_errors( true );
-        $doc->loadHTML( '<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-        libxml_clear_errors();
+        $tags          = array_values( array_unique( array_column( $headings, 'tag' ) ) );
+        [ $doc, $nodes ] = self::load( $html, $tags );
 
-        foreach ( array_unique( array_column( $headings, 'tag' ) ) as $tag ) {
-            foreach ( iterator_to_array( $doc->getElementsByTagName( $tag ) ) as $node ) {
-                $text = trim( $node->textContent );
-                $key  = $tag . '|' . $text;
-                if ( isset( $map[ $key ] ) && ! $node->getAttribute( 'id' ) ) {
-                    $node->setAttribute( 'id', $map[ $key ] );
-                }
+        $i = 0;
+        foreach ( $nodes as $node ) {
+            if ( '' === trim( $node->textContent ) ) {
+                continue; // Skipped by extract() as well.
             }
+            if ( ! isset( $headings[ $i ] ) ) {
+                break;
+            }
+            if ( '' === $node->getAttribute( 'id' ) ) {
+                $node->setAttribute( 'id', $headings[ $i ]['id'] );
+            }
+            $i++;
         }
 
-        // saveHTML on the full doc adds <html><body> wrappers; extract just the body children.
-        $body = $doc->getElementsByTagName( 'body' )->item( 0 );
-        if ( ! $body ) {
+        $root = $doc->getElementById( self::ROOT_ID );
+        if ( ! $root ) {
             return $html;
         }
 
         $out = '';
-        foreach ( $body->childNodes as $child ) {
+        foreach ( $root->childNodes as $child ) {
             $out .= $doc->saveHTML( $child );
         }
         return $out;
@@ -115,9 +102,36 @@ class TOCG_Parser {
     // -------------------------------------------------------------------------
 
     /**
+     * Parse HTML inside a wrapper and query the requested heading tags.
+     *
+     * XPath returns a union query in document order, so no manual sorting is
+     * needed.
+     *
+     * @param string   $html HTML fragment.
+     * @param string[] $tags Heading tags.
+     * @return array{0: DOMDocument, 1: DOMNodeList}
+     */
+    private static function load( string $html, array $tags ): array {
+        $doc = new DOMDocument();
+        // Suppress errors from malformed HTML; the XML encoding hint keeps UTF-8 intact.
+        libxml_use_internal_errors( true );
+        $doc->loadHTML(
+            '<?xml encoding="UTF-8"><div id="' . self::ROOT_ID . '">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+
+        $tags  = array_filter( $tags, fn( $tag ) => (bool) preg_match( '/^h[1-6]$/', $tag ) );
+        $query = implode( ' | ', array_map( fn( $tag ) => '//' . $tag, $tags ) );
+
+        $xpath = new DOMXPath( $doc );
+        return [ $doc, $xpath->query( $query ) ];
+    }
+
+    /**
      * Convert heading text to a URL-friendly slug, avoiding duplicates.
      *
-     * @param string[] $seen
+     * @param string[] $seen Ids already used on this page.
      */
     private static function slug( string $text, array $seen ): string {
         $base = sanitize_title( $text );
@@ -128,32 +142,5 @@ class TOCG_Parser {
             $i++;
         }
         return $slug;
-    }
-
-    /**
-     * Return a comparable document-order integer for a DOM node.
-     * We walk the DOM to get a reliable depth-first index.
-     */
-    private static function node_position( DOMNode $node ): int {
-        static $cache = [];
-        $id = spl_object_id( $node );
-        if ( isset( $cache[ $id ] ) ) {
-            return $cache[ $id ];
-        }
-        $pos  = 0;
-        $iter = new RecursiveIteratorIterator(
-            new RecursiveArrayIterator( [] ) // placeholder — we walk the owner document
-        );
-        // Simple approach: traverse from document root, count nodes until we find ours.
-        $doc  = $node->ownerDocument;
-        $all  = $doc->getElementsByTagName( '*' );
-        foreach ( $all as $i => $n ) {
-            if ( $n === $node ) {
-                $pos = $i;
-                break;
-            }
-        }
-        $cache[ $id ] = $pos;
-        return $pos;
     }
 }

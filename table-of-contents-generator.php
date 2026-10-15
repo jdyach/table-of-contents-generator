@@ -3,7 +3,7 @@
  * Plugin Name:       Table of Contents Generator
  * Plugin URI:        https://github.com/jdyach/table-of-contents-generator
  * Description:       Automatically parses H2 and H3 headings in post content and injects a linked Table of Contents. Configurable heading levels, minimum headings threshold, and title text.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Author:            Jacqui Dyachenko
  * Author URI:        https://jacquid.com
  * License:           GPL-2.0-or-later
@@ -15,7 +15,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'TOCG_VERSION',    '1.0.0' );
+define( 'TOCG_VERSION',    '1.0.1' );
 define( 'TOCG_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TOCG_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'TOCG_OPTIONS_KEY', 'tocg_settings' );

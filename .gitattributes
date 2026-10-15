@@ -1,0 +1,4 @@
+# Keep the Playground demo out of GitHub's "Download ZIP" / git archive.
+/_playground export-ignore
+/bin         export-ignore
+/.gitattributes export-ignore

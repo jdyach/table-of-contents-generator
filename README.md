@@ -2,6 +2,10 @@
 
 A WordPress plugin that automatically parses H2 (and optionally H3) headings in post content and injects a linked Table of Contents above the post. No shortcodes required — it just works.
 
+[![Try it live in WordPress Playground](https://img.shields.io/badge/Try%20it%20live-WordPress%20Playground-3858e9?logo=wordpress&logoColor=white&style=for-the-badge)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jdyach/table-of-contents-generator/main/_playground/blueprint.json)
+
+The live demo runs a real WordPress site in your browser with this plugin, the [Fieldnote](https://github.com/jdyach/fieldnote) block theme and sample content. It opens a long guide with a linked table of contents generated from its H2 and H3 headings. Nothing to install.
+
 ## Features
 
 - Automatically detects H2 headings (and optionally H3 as sub-items)
@@ -51,3 +55,12 @@ table-of-contents-generator/
 
 - WordPress 6.0+
 - PHP 8.0+
+
+## Changelog
+
+### 1.0.1
+- Fix: TOC links now jump to their headings. Heading `id` attributes were never written back, because parsing with `LIBXML_HTML_NOIMPLIED` creates no `<body>` element to read the result from. Content is now parsed inside a wrapper element.
+- Fix: headings are collected with a single XPath query, which returns them in document order. The previous sort relied on positions cached by `spl_object_id()`, which PHP reuses, so entries could appear out of order.
+- Fix: repeated heading text now gets unique ids (`intro`, `intro-1`) applied to the right headings.
+- Fix: the TOC box lines up with the content column in block themes (it was `inline-block` with `max-width: 100%`, which overrides how block themes size content).
+- WordPress Playground live demo.
